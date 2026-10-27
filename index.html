@@ -79,6 +79,20 @@ details.cal summary{cursor:pointer;font-weight:700;font-size:13px}
 .ar-controls.on{display:flex}
 .ar-controls button{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer}
 
+.wand-btn{position:absolute;top:12px;right:72px;z-index:10;height:48px;padding:0 18px 0 14px;border:0;border-radius:24px;background:var(--acc);color:var(--accink);display:flex;align-items:center;gap:8px;font:inherit;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.wand-btn svg{width:22px;height:22px;flex:none}
+@media(max-width:520px){.wand-btn{width:48px;padding:0;justify-content:center}.wand-btn span{display:none}}
+.msvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:9}
+.rt-modal{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto}
+.rt-modal[hidden]{display:none}
+.rt-box{background:var(--panel);color:var(--ink);border-radius:14px;padding:14px;width:min(1100px,100%);max-height:100%;overflow:auto}
+.rt-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}.rt-head b{font-size:16px;flex:1}
+.rt-x{border:0;background:none;color:var(--ink);font-size:28px;cursor:pointer;line-height:1;padding:0 6px}
+.rt-view{position:relative;width:min(100%,calc(62vh*var(--rar,1.7778)));aspect-ratio:var(--rar,1.7778);margin:0 auto;border-radius:8px;overflow:hidden;background:#000}
+.rt-view canvas{position:absolute;inset:0;width:100%;height:100%}
+.rt-line{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 6px rgba(0,0,0,.6);pointer-events:none;display:none}
+.rt-tag{position:absolute;top:8px;padding:3px 9px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;pointer-events:none}.rt-tag.l{left:8px}.rt-tag.r{right:8px}
+#rtreport{font-size:12.5px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -109,6 +123,8 @@ details.cal summary{cursor:pointer;font-weight:700;font-size:13px}
   <video id="video" autoplay playsinline muted></video>
   <canvas id="gl"></canvas>
   <button class="cam-btn" id="cambtn" title="Live-Kamera / AR">📷</button>
+  <button class="wand-btn" id="wandbtn" title="KI Retusche: Sofa per Knopfdruck in das Foto einarbeiten"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20L15 9"/><path d="M13.5 7.5l3 3"/><path d="M17 3v3M15.5 4.5h3M20 9v2M19 10h2M8 4v2M7 5h2"/></svg><span>KI Retusche</span></button>
+  <svg class="msvg" id="msvg"></svg>
   <div class="ar-controls" id="arcontrols">
     <button id="capture">Foto aufnehmen</button>
     <button id="stopcam">Kamera schließen</button>
@@ -117,6 +133,16 @@ details.cal summary{cursor:pointer;font-weight:700;font-size:13px}
   <div class="toast" id="toast"></div>
  </main>
  <aside class="panel" id="side"></aside>
+</div>
+<div class="rt-modal" id="rt" hidden>
+ <div class="rt-box">
+  <div class="rt-head"><b>KI Retusche</b><button class="rt-x" id="rtclose" title="Schließen">×</button></div>
+  <div class="rt-view" id="rtview"><canvas id="rtbefore"></canvas><canvas id="rtafter"></canvas><div class="rt-line" id="rtline"></div><div class="rt-tag l">Vorher</div><div class="rt-tag r">Nachher</div></div>
+  <label class="f">Vorher / Nachher vergleichen</label><input type="range" id="rtcmp" min="0" max="100" value="0">
+  <label class="f">Stärke der Retusche: <span id="rtkv">100</span> %</label><input type="range" id="rtk" min="0" max="100" value="100">
+  <div class="btns"><button id="rtpng">Als PNG speichern</button><button id="rtjpg">Als JPG speichern</button><button id="rtscale">Maßstab prüfen</button><button id="rtagain">Erneut retuschieren</button></div>
+  <div id="rtreport" class="empty"></div>
+ </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -129,8 +155,8 @@ const pick=(...n)=>n.map(k=>[k,PAL[k]]),TT_BASE=[224,216,198];
 const FAB={vel:{label:'Velours',cols:pick('Beige','Ivory','Sand','Hellgrau','Dunkelgrau','Olivgrün','Schwarz','Rot','Kupferbraun','Lachsrosé')},
  wg:{label:'Webstoff grob',cols:pick('Beige','Ivory','Sand','Hellgrau','Dunkelgrau','Olivgrün','Kupferbraun')},
  tt:{label:'Webstoff Two-Tone',cols:[['Ivory','#f3eee2'],['Beige','#cdb892'],['Hellbraun','#a47e5b'],['Dunkelbraun','#4b3527'],['Olivgrün','#6c7149']]}};
-const cal={hor:56,h:140,fov:52,exp:100,sunI:100,sun:20,sunE:40,sh:75,refl:16},calDef={...cal};let lightK=1;
-const CALS=[['hor','Horizont im Bild',40,75,'%'],['h','Kamerahöhe',60,220,'cm'],['fov','Bildwinkel',30,85,'°'],['exp','Belichtung',30,170,'%'],['sunI','Sonnenstärke',0,250,'%'],['sun','Sonnenrichtung',0,360,'°'],['sunE','Sonnenhöhe',10,80,'°'],['sh','Schattenstärke',0,100,'%'],['refl','Bodenspiegelung',0,40,'%']];
+const cal={hor:56,h:140,fov:52,exp:100,sunI:100,sun:20,sunE:40,sh:75,refl:16},calDef={...cal};let lightK=1,tuned=false;
+const CALS=[['hor','Horizont im Bild',20,90,'%'],['h','Kamerahöhe',40,400,'cm'],['fov','Bildwinkel',30,85,'°'],['exp','Belichtung',30,170,'%'],['sunI','Sonnenstärke',0,250,'%'],['sun','Sonnenrichtung',0,360,'°'],['sunE','Sonnenhöhe',10,80,'°'],['sh','Schattenstärke',0,100,'%'],['refl','Bodenspiegelung',0,40,'%']];
 const renderer=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true,preserveDrawingBuffer:true});
 renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;
@@ -401,7 +427,7 @@ function autoLight(img){const W=48,H=27,c=document.createElement('canvas');c.wid
  setEnv(makeEnv(renderer,R));
  sun.color.setRGB(.35+.65*sn[0],.35+.65*sn[1],.35+.65*sn[2]).convertSRGBToLinear();
  hemi.color.setRGB(R.top[0]/255,R.top[1]/255,R.top[2]/255).convertSRGBToLinear();hemi.groundColor.setRGB(R.floor[0]/255,R.floor[1]/255,R.floor[2]/255).convertSRGBToLinear();hemi.intensity=.45;
- lightK=.75+.7*lum(all);cal.sun=Math.abs(cx-.5)>.12?Math.round(180*(1-cx)):120;cal.sunE=40;cal.sunI=100;cal.sh=75;cal.refl=0;syncCal();applyCal()}
+ lightK=.75+.7*lum(all);cal.sun=Math.abs(cx-.5)>.12?Math.round(180*(1-cx)):120;cal.sunE=40;cal.sunI=100;cal.sh=75;cal.refl=0;syncCal();applyCal();tuned=false}
 $('#bgfile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const fr=new FileReader();
  fr.onload=()=>{const im=new Image();im.onload=()=>{setBg(fr.result,Math.min(2.4,Math.max(1,im.width/im.height)));autoLight(im);
   toast('Hintergrund gewechselt, Licht automatisch geschätzt. Prüfe Horizont, Sonnenrichtung und Bodenspiegelung unter „Raum und Licht“.')};
@@ -537,10 +563,115 @@ $('#capture').onclick = () => {
 $('#dlpng').onclick=()=>downloadView('png');
 $('#dljpg').onclick=()=>downloadView('jpg');
 $('#bgreset').onclick=()=>{setBg('','');Object.assign(cal,calDef);lightK=1;hemi.color.set(0xffffff);hemi.groundColor.set(0xd8cdbb);hemi.intensity=.25;sun.color.set(0xfff0d6);setEnv(makeEnv(renderer));syncCal();applyCal()};
+
+// === KI Retusche (Stufe 1: lokale Bildanalyse und Harmonisierung, ohne externen Dienst) ===
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),S2L=new Float32Array(256),RT={};
+for(let i=0;i<256;i++){const c=i/255;S2L[i]=c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4)}
+const l2s=v=>255*(v<=0?0:v>=1?1:v<=.0031308?v*12.92:1.055*Math.pow(v,1/2.4)-.055);
+const gauss=()=>(Math.random()+Math.random()+Math.random()-1.5)*2;
+function coverDraw(x,src,iw,ih,W,H){const s=Math.max(W/iw,H/ih),w=iw*s,h=ih*s;x.drawImage(src,(W-w)/2,(H-h)/2,w,h)}
+function bgSource(){return new Promise(res=>{
+ if(typeof stream!=='undefined'&&stream&&video.videoWidth)return res({src:video,iw:video.videoWidth,ih:video.videoHeight});
+ const bg=getComputedStyle(stage).backgroundImage,m=bg&&bg.match(/url\(["']?(.*?)["']?\)/);
+ if(!(m&&m[1]))return res(null);
+ const im=new Image();im.crossOrigin='anonymous';im.onload=()=>res({src:im,iw:im.width,ih:im.height});im.onerror=()=>res(null);im.src=m[1]})}
+function boxBlur(a,w,h,r){const t=new Float32Array(a.length),o=new Float32Array(a.length),n=2*r+1;
+ for(let y=0;y<h;y++){let s=0;for(let k=-r;k<=r;k++)s+=a[y*w+clamp(k,0,w-1)];for(let x=0;x<w;x++){t[y*w+x]=s/n;s+=a[y*w+clamp(x+r+1,0,w-1)]-a[y*w+clamp(x-r,0,w-1)]}}
+ for(let x=0;x<w;x++){let s=0;for(let k=-r;k<=r;k++)s+=t[clamp(k,0,h-1)*w+x];for(let y=0;y<h;y++){o[y*w+x]=s/n;s+=t[clamp(y+r+1,0,h-1)*w+x]-t[clamp(y-r,0,h-1)*w+x]}}
+ return o}
+// Hintergrund lesen: Helligkeit, Kontrast, Sättigung, Farbstich, Körnung, Schärfe, Lichtmuster (Baumschatten, Lichtflecken) und Bodenfarbe
+function analyzeBg(bgc){const sw=Math.min(240,bgc.width),sh=Math.max(8,Math.round(sw*bgc.height/bgc.width)),c=document.createElement('canvas');c.width=sw;c.height=sh;
+ const x=c.getContext('2d');x.drawImage(bgc,0,0,sw,sh);const d=x.getImageData(0,0,sw,sh).data,N=sw*sh,Ls=new Float32Array(N),hist=new Uint32Array(256);
+ let sr=0,sg=0,sb=0,nn=0,sat=0,satN=0;
+ for(let i=0;i<N;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2],y=.2126*r+.7152*g+.0722*b;Ls[i]=y/255;hist[Math.round(y)]++;
+  const mx=Math.max(r,g,b),s=mx?(mx-Math.min(r,g,b))/mx:0;if(y>30&&y<225){sat+=s;satN++}if(s<.28&&y>40&&y<230){sr+=r;sg+=g;sb+=b;nn++}}
+ const pct=p=>{let a=0;for(let i=0;i<256;i++){a+=hist[i];if(a>=N*p)return i/255}return 1};
+ let tint=[1,1,1];if(nn>N*.03){const m=(sr+sg+sb)/3/nn;tint=[sr,sg,sb].map(v=>clamp(v/nn/m,.9,1.1))}
+ const cw=Math.min(256,bgc.width),ch=Math.min(256,bgc.height),cd=bgc.getContext('2d').getImageData((bgc.width-cw)>>1,(bgc.height-ch)>>1,cw,ch).data,hp=[],gr=[];
+ const Lc=i=>.2126*cd[i*4]+.7152*cd[i*4+1]+.0722*cd[i*4+2];
+ for(let y=1;y<ch-1;y++)for(let xx=1;xx<cw-1;xx++){const i=y*cw+xx;hp.push(Math.abs(Lc(i)-(Lc(i-1)+Lc(i+1)+Lc(i-cw)+Lc(i+cw))/4));gr.push(Math.abs(Lc(i+1)-Lc(i-1))+Math.abs(Lc(i+cw)-Lc(i-cw)))}
+ hp.sort((a,b)=>a-b);gr.sort((a,b)=>a-b);
+ const noise=clamp(hp[hp.length>>1]*1.32*.7-.3,0,5),g95=gr[Math.floor(gr.length*.95)]/2,soft=clamp((22-g95)/22*1.3,0,1.2);
+ const ft=clamp(Math.floor((cal.hor/100+.02)*sh),0,sh-8),lb=boxBlur(Ls,sw,sh,2),lg=boxBlur(Ls,sw,sh,Math.round(sw*.12)),lm=new Float32Array(N);
+ let ss=0,sn=0,fr=0,fg=0,fb=0;
+ for(let y=0;y<sh;y++)for(let xx=0;xx<sw;xx++){const i=Math.max(y,ft)*sw+xx,r=clamp(lb[i]/(lg[i]+.03),.45,1.55);lm[y*sw+xx]=r;
+  if(y>=ft){const lr=Math.log(r);ss+=lr*lr;sn++;fr+=d[i*4];fg+=d[i*4+1];fb+=d[i*4+2]}}
+ return{p02:pct(.02),p50:pct(.5),p90:pct(.9),p98:pct(.98),tint,sat:satN?sat/satN:.25,noise,soft,lm,sw,sh,dapple:sn?Math.sqrt(ss/sn):0,floor:sn?[fr/sn,fg/sn,fb/sn]:[120,110,100]}}
+function renderLayer(){need=true;renderer.render(scene,cam);const c=document.createElement('canvas');c.width=cv.width;c.height=cv.height;c.getContext('2d').drawImage(cv,0,0);return c}
+// Weiße Referenzkugel an der Sofa-Position: zeigt, wie hell ein weißes Objekt in dieser Szene gerendert wird
+function measureRef(){const t=items.filter(i=>!i.isImage);if(!t.length)return null;
+ const c=new THREE.Vector3();t.forEach(i=>c.add(i.group.position));c.divideScalar(t.length);
+ const sph=new THREE.Mesh(new THREE.SphereGeometry(.3,32,16),new THREE.MeshStandardMaterial({color:0xd0d0d0,roughness:1,metalness:0,envMapIntensity:.7}));
+ sph.position.set(c.x,.3,c.z);scene.add(sph);
+ const vis=items.map(i=>i.group.visible),gv=ground.visible,grv=grid.visible;items.forEach(i=>i.group.visible=false);ground.visible=false;grid.visible=false;
+ const cc=renderLayer(),d=cc.getContext('2d').getImageData(0,0,cc.width,cc.height).data;
+ items.forEach((i,k)=>i.group.visible=vis[k]);ground.visible=gv;grid.visible=grv;scene.remove(sph);sph.geometry.dispose();sph.material.dispose();
+ const ys=[];for(let i=0;i<d.length;i+=4)if(d[i+3]>230)ys.push(.2126*d[i]+.7152*d[i+1]+.0722*d[i+2]);
+ if(ys.length<50)return null;ys.sort((a,b)=>a-b);return ys[Math.floor(ys.length*.9)]/255}
+function blurDraw(x,src,px){if(px>.3&&typeof x.filter==='string'){x.filter='blur('+px.toFixed(2)+'px)';x.drawImage(src,0,0);x.filter='none'}else x.drawImage(src,0,0)}
+async function retouch(){
+ if(RT.busy)return;RT.busy=true;
+ try{
+  const bs=await bgSource();if(!bs){toast('Kein Hintergrundbild erkannt');return}
+  if(!items.length){toast('Bitte zuerst ein Sofa im Raum platzieren');return}
+  toast('Retusche läuft … Hintergrund wird analysiert');await new Promise(r=>setTimeout(r,80));
+  const W=cv.width,H=cv.height,N=W*H,mk2=()=>{const c=document.createElement('canvas');c.width=W;c.height=H;return c};
+  const bgc=mk2();coverDraw(bgc.getContext('2d'),bs.src,bs.iw,bs.ih,W,H);
+  const A=analyzeBg(bgc);if(!tuned)autoLight(bgc);
+  const ref=measureRef(),lay=renderLayer(),g=lay.getContext('2d').getImageData(0,0,W,H).data;
+  const exposure=ref?clamp(Math.pow(clamp(A.p90*.97,.35,.95)/Math.max(ref,.05),2.2),.55,1.6):1,
+   satK=clamp(.6+.4*A.sat/.28,.7,1.15),bl=A.p02*255*.6,tint=A.tint.map(v=>1+(v-1)*.6),sLight=clamp((A.dapple-.06)/.24,0,1)*.7,
+   hard=clamp((A.p98-A.p02-.45)/.4,0,1),shScale=.55+.45*hard,shBlur=(1.5+(1-hard)*5)*W/1280,shc=A.floor.map(v=>v*.28),grain=A.noise;
+  const sC=mk2(),shC=mk2(),sof=sC.getContext('2d').createImageData(W,H),sd=sof.data,shi=shC.getContext('2d').createImageData(W,H),shd=shi.data;
+  for(let i=0;i<N;i++){const a=g[i*4+3];if(!a)continue;const r=g[i*4],gg=g[i*4+1],b=g[i*4+2],al=a/255;
+   if(al<.985&&(.2126*r+.7152*gg+.0722*b)/255<.07){ // Schatten: Farbe aus dem Boden, Härte aus dem Foto
+    shd[i*4]=shc[0];shd[i*4+1]=shc[1];shd[i*4+2]=shc[2];shd[i*4+3]=clamp(a*shScale,0,255);continue}
+   let lr=S2L[r]*exposure*tint[0],lg=S2L[gg]*exposure*tint[1],lb=S2L[b]*exposure*tint[2];
+   if(sLight>0){const y=(i/W)|0,x=i-y*W,m=A.lm[Math.min(A.sh-1,(y/H*A.sh)|0)*A.sw+Math.min(A.sw-1,(x/W*A.sw)|0)],f=1+(m-1)*sLight;lr*=f;lg*=f;lb*=f}
+   let R=l2s(lr),G=l2s(lg),B=l2s(lb);const Y=.2126*R+.7152*G+.0722*B;
+   R=Y+(R-Y)*satK;G=Y+(G-Y)*satK;B=Y+(B-Y)*satK;
+   const k=1-bl/255,n=grain?gauss()*grain*(.5+Y/510):0;
+   sd[i*4]=bl+R*k+n;sd[i*4+1]=bl+G*k+n;sd[i*4+2]=bl+B*k+n;sd[i*4+3]=a}
+  sC.getContext('2d').putImageData(sof,0,0);shC.getContext('2d').putImageData(shi,0,0);
+  const fin=mk2(),fx=fin.getContext('2d');fx.drawImage(bgc,0,0);blurDraw(fx,shC,shBlur);blurDraw(fx,sC,A.soft*W/1280);
+  const bef=mk2(),bf=bef.getContext('2d');bf.drawImage(bgc,0,0);bf.drawImage(lay,0,0);
+  const rep=['Belichtung ×'+exposure.toFixed(2)+(ref?'':' (nicht messbar)'),'Sättigung ×'+satK.toFixed(2),'Farbstich angeglichen','Körnung '+grain.toFixed(1),
+   'Lichtmuster aus dem Foto '+Math.round(sLight/.7*100)+' %','Schatten '+(hard>.5?'hart':'weich')+' und in Bodenfarbe getönt',A.soft>.3?'Weichzeichnung '+(A.soft*W/1280).toFixed(1)+' px':'Schärfe unverändert',
+   tuned?'Licht-Regler manuell (nicht überschrieben)':'Lichtrichtung automatisch'].join(' · ');
+  showResult(bef,fin,rep);need=true;
+ }finally{RT.busy=false}}
+function showResult(bef,aft,rep){RT.bef=bef;RT.aft=aft;const W=bef.width,H=bef.height;
+ [['rtbefore',bef],['rtafter',aft]].forEach(([id,c])=>{const e=$('#'+id);e.width=W;e.height=H;e.getContext('2d').drawImage(c,0,0)});
+ $('#rtview').style.setProperty('--rar',W/H);$('#rtk').value=100;$('#rtcmp').value=0;applyRT();$('#rtreport').textContent=rep;$('#rt').hidden=false}
+function applyRT(){const k=$('#rtk').value/100,c=+$('#rtcmp').value;$('#rtafter').style.opacity=k;$('#rtafter').style.clipPath='inset(0 0 0 '+c+'%)';
+ $('#rtkv').textContent=Math.round(k*100);const l=$('#rtline');l.style.left=c+'%';l.style.display=c>0&&c<100?'block':'none'}
+function saveRT(fmt){const c=document.createElement('canvas');c.width=RT.bef.width;c.height=RT.bef.height;const x=c.getContext('2d');
+ x.drawImage(RT.bef,0,0);x.globalAlpha=$('#rtk').value/100;x.drawImage(RT.aft,0,0);
+ const a=document.createElement('a');a.href=c.toDataURL(fmt==='jpg'?'image/jpeg':'image/png',.93);a.download='sofa-retusche.'+fmt;document.body.appendChild(a);a.click();a.remove()}
+// Maßstab prüfen: zwei Punkte einer bekannten Strecke auf dem Boden markieren, die Kamerahöhe wird so korrigiert, dass das Sofa seine echte Größe behält
+let meas=null;const msvg=$('#msvg');
+function startMeasure(){$('#rt').hidden=true;meas={pts:[]};msvg.innerHTML='';stage.style.cursor='crosshair';toast('Tippe zwei Punkte einer bekannten Strecke auf dem Boden (z. B. Türbreite oder Fliesenreihe)')}
+stage.addEventListener('pointerdown',e=>{if(!meas)return;e.stopPropagation();e.preventDefault();const r=stage.getBoundingClientRect(),p={x:e.clientX-r.left,y:e.clientY-r.top,cx:e.clientX,cy:e.clientY};meas.pts.push(p);
+ msvg.innerHTML+='<circle cx="'+p.x+'" cy="'+p.y+'" r="6" fill="#fff" stroke="#56633f" stroke-width="3"/>';
+ if(meas.pts.length===2){const[a,b]=meas.pts;msvg.innerHTML+='<line x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'" stroke="#fff" stroke-width="2" stroke-dasharray="6 4"/>';setTimeout(()=>finishMeasure(a,b),60)}},true);
+function finishMeasure(a,b){meas=null;stage.style.cursor='';
+ const pl=new THREE.Plane(Y,0),P=[a,b].map(p=>{aim({clientX:p.cx,clientY:p.cy});const v=new THREE.Vector3();return ray.ray.intersectPlane(pl,v)?v:null});
+ if(!P[0]||!P[1]){msvg.innerHTML='';toast('Die Punkte liegen nicht auf dem Boden (über dem Horizont). Bitte Horizont prüfen.');return}
+ const l3=P[0].distanceTo(P[1]),m=parseFloat(String(prompt('Wie lang ist die markierte Strecke in Metern?','2.10')||'').replace(',','.'));
+ msvg.innerHTML='';if(!(m>0)||!(l3>.01)){toast('Maßstab nicht geändert');return}
+ const f=m/l3;if(f<.3||f>3){toast('Abweichung zu groß ('+f.toFixed(2)+'×). Bitte Kamerahöhe und Bildwinkel prüfen.');return}
+ cal.h=Math.round(clamp(cal.h*f,40,400));items.forEach(i=>{i.group.position.x*=f;i.group.position.z*=f});tuned=true;syncCal();applyCal();
+ toast('Maßstab angepasst (Kamerahöhe '+cal.h+' cm). Das Sofa behält seine echte Größe.');retouch()}
+$('#wandbtn').onclick=()=>retouch().catch(e=>{RT.busy=false;toast('Retusche fehlgeschlagen: '+e.message)});
+$('#rtclose').onclick=()=>{$('#rt').hidden=true};$('#rtagain').onclick=()=>{$('#rt').hidden=true;$('#wandbtn').click()};
+$('#rtscale').onclick=startMeasure;$('#rtpng').onclick=()=>saveRT('png');$('#rtjpg').onclick=()=>saveRT('jpg');
+$('#rtk').oninput=applyRT;$('#rtcmp').oninput=applyRT;
+addEventListener('keydown',e=>{if(e.key==='Escape'){$('#rt').hidden=true;if(meas){meas=null;msvg.innerHTML='';stage.style.cursor=''}}});
+
 addEventListener('error',e=>toast('Fehler: '+e.message));addEventListener('unhandledrejection',e=>toast('Fehler: '+(e.reason&&e.reason.message||e.reason)));
 // Kalibrierung Raum & Licht
 $('#cal').innerHTML='<div class="empty" style="font-size:12px">Sonnenrichtung: 0° Licht von rechts, 90° von vorn, 180° von links, 270° von hinten.</div>'+CALS.map(c=>`<label class="f">${c[1]}: <span id="c_${c[0]}">${cal[c[0]]}</span> ${c[4]}</label><input type="range" data-k="${c[0]}" min="${c[2]}" max="${c[3]}" value="${cal[c[0]]}">`).join('');
-$('#cal').querySelectorAll('input').forEach(i=>i.oninput=()=>{cal[i.dataset.k]=+i.value;$('#c_'+i.dataset.k).textContent=i.value;if(['hor','h','fov'].includes(i.dataset.k))showGrid();applyCal()});
+$('#cal').querySelectorAll('input').forEach(i=>i.oninput=()=>{tuned=true;cal[i.dataset.k]=+i.value;$('#c_'+i.dataset.k).textContent=i.value;if(['hor','h','fov'].includes(i.dataset.k))showGrid();applyCal()});
 function syncCal(){$('#cal').querySelectorAll('input').forEach(i=>{i.value=cal[i.dataset.k];$('#c_'+i.dataset.k).textContent=cal[i.dataset.k]})}
 function applyCal(){const r=stage.getBoundingClientRect();cam.fov=cal.fov;cam.aspect=r.width/r.height;cam.position.set(0,cal.h/100,0);
  cam.setViewOffset(r.width,r.height,0,-(cal.hor/100-.5)*r.height,r.width,r.height);cam.updateProjectionMatrix();
@@ -553,3 +684,4 @@ new ResizeObserver(resize).observe(stage);resize();drawSide();
 </script>
 </body>
 </html>
+
